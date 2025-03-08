@@ -1,7 +1,7 @@
 ﻿using ImageProcessing.Models;
 using ImageProcessing.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ImageProcessing.Controllers
 {
@@ -11,11 +11,13 @@ namespace ImageProcessing.Controllers
     {
         private readonly IImageProcessingService _processingService;
         private readonly ImageDbContext _dbContext;
+
         public ImageController(IImageProcessingService processingService, ImageDbContext dbContext)
         {
             _processingService = processingService;
             _dbContext = dbContext;
         }
+
         [HttpPost("upload")]
         [RequestSizeLimit(100_000_000)]
         public async Task<IActionResult> Upload(IFormFile file)
@@ -26,17 +28,18 @@ namespace ImageProcessing.Controllers
             using var stream = file.OpenReadStream();
             var variants = new List<ImageVariant>();
 
-            foreach (VariantType type in Enum.GetValues(typeof(VariantType)))
+            var variantTypes = await _dbContext.VariantTypes.ToListAsync();
+            foreach (var type in variantTypes)
             {
                 stream.Position = 0;
-                var variant = await _processingService.GenerateVariantAsync(stream, file.FileName, type);
-                variants.Add(variant);
+                var asset = await _processingService.GenerateVariantAsync(stream, file.FileName, type);
+                variants.Add(asset);
             }
 
             return Ok(variants.Select(v => new
             {
                 v.Id,
-                v.Type,
+                VariantType = v.VariantType.Name,
                 v.Width,
                 v.Height,
                 v.FilePath,
@@ -48,7 +51,7 @@ namespace ImageProcessing.Controllers
         [HttpGet("variant/{id}")]
         public async Task<IActionResult> GetVariant(int id)
         {
-            var variant = await _dbContext.ImageVariants.FindAsync(id);
+            var variant = await _dbContext.ImageVariants.Include(v => v.VariantType).FirstOrDefaultAsync(v => v.Id == id);
             if (variant == null)
                 return NotFound();
 
