@@ -48,8 +48,8 @@ namespace ImageProcessing.Services
             }
 
             string format = type == VariantType.Original ? Path.GetExtension(fileName) : ".webp";
-            string outputPath = Path.Combine("uploads", $"{Guid.NewGuid()}{format}");
-            Directory.CreateDirectory("uploads");
+            string outputPath = Path.Combine("Assets", $"{Guid.NewGuid()}{format}");
+            Directory.CreateDirectory("Assets");
 
             IImageEncoder encoder = type == VariantType.Original
             ? new JpegEncoder { Quality = quality }
