@@ -12,14 +12,6 @@ namespace ImageProcessing.Services
     {
         private readonly IMemoryCache _cache;
         private readonly ImageDbContext _dbContext;
-        private readonly Dictionary<VariantType, (int maxSize, int quality)> VariantSettings = new()
-    {
-        { VariantType.Original, (0, 100) },
-        { VariantType.TwoK, (2048, 85) },
-        { VariantType.WebOptimized, (1200, 75) },
-        { VariantType.MobileOptimized, (768, 70) },
-        { VariantType.Thumbnail, (300, 65) }
-    };
 
         public ImageProcessingService(IMemoryCache cache, ImageDbContext dbContext)
         {
@@ -29,14 +21,15 @@ namespace ImageProcessing.Services
 
         public async Task<ImageVariant> GenerateVariantAsync(Stream imageStream, string fileName, VariantType type)
         {
-            string cacheKey = $"{fileName}_{type}";
+            string cacheKey = $"{fileName}_{type.Name}";
             if (_cache.TryGetValue(cacheKey, out ImageVariant cachedVariant))
             {
                 return cachedVariant;
             }
 
             using var image = await Image.LoadAsync(imageStream);
-            var (maxSize, quality) = VariantSettings[type];
+            var maxSize = type.MaxSize;
+            var quality = type.Quality;
 
             if (maxSize > 0 && (image.Width > maxSize || image.Height > maxSize))
             {
@@ -47,15 +40,13 @@ namespace ImageProcessing.Services
                 }));
             }
 
-            string format = type == VariantType.Original ? Path.GetExtension(fileName) : ".webp";
+            string format = type.Name == "Original" ? Path.GetExtension(fileName) : ".webp";
             string outputPath = Path.Combine("Assets", $"{Guid.NewGuid()}{format}");
             Directory.CreateDirectory("Assets");
 
-            IImageEncoder encoder = type == VariantType.Original
+            IImageEncoder encoder = type.Name == "Original"
             ? new JpegEncoder { Quality = quality }
             : new WebpEncoder { Quality = quality };
-
-            await image.SaveAsync(outputPath, encoder);
 
             await image.SaveAsync(outputPath, encoder);
 
@@ -63,7 +54,7 @@ namespace ImageProcessing.Services
             {
                 OriginalFileName = fileName,
                 FilePath = outputPath,
-                Type = type,
+                VariantTypeId = type.Id,
                 Width = image.Width,
                 Height = image.Height,
                 Format = format,

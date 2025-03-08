@@ -6,7 +6,8 @@ namespace ImageProcessing.Models
         public int Id { get; set; }
         public string OriginalFileName { get; set; }
         public string FilePath { get; set; }
-        public VariantType Type { get; set; }
+        public int VariantTypeId { get; set; }
+        public VariantType VariantType { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
         public string Format { get; set; }
@@ -15,12 +16,5 @@ namespace ImageProcessing.Models
         public int Quality { get; set; }
     }
 
-    public enum VariantType
-    {
-        Original,
-        TwoK,
-        WebOptimized,
-        MobileOptimized,
-        Thumbnail
-    }
+    
 }
