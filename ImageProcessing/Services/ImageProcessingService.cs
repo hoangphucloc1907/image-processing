@@ -1,5 +1,4 @@
-﻿using ImageProcessing.Data;
-using ImageProcessing.Models;
+﻿using ImageProcessing.Models;
 using Microsoft.Extensions.Caching.Memory;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
