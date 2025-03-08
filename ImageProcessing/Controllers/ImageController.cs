@@ -2,6 +2,7 @@
 using ImageProcessing.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ImageProcessing.Controllers
 {
@@ -45,12 +46,14 @@ namespace ImageProcessing.Controllers
             }));
         }
 
-        [HttpGet("variant/{id}")]
-        public async Task<IActionResult> GetVariant(int id)
+        [HttpGet("variant/{originalFileName}/{type}")]
+        public async Task<IActionResult> GetVariant(string originalFileName, VariantType type)
         {
-            var variant = await _dbContext.ImageVariants.FindAsync(id);
+            var variant = await _dbContext.ImageVariants
+                .FirstOrDefaultAsync(v => v.OriginalFileName == originalFileName && v.Type == type);
+
             if (variant == null)
-                return NotFound();
+                return NotFound("No variant found for the original file and requested type.");
 
             var fileStream = System.IO.File.OpenRead(variant.FilePath);
             return File(fileStream, $"image/{variant.Format.TrimStart('.')}");
