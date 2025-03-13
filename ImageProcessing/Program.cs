@@ -15,14 +15,17 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var app = builder.Build();
+builder.Services.Configure<KafkaSettings>(builder.Configuration.GetSection("KafkaSettings"));
+builder.Services.AddScoped<ProducerService>();
+builder.Services.AddHostedService<ConsumerService>();
 
-// Configure the HTTP request pipeline.
+var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
 
 app.UseHttpsRedirection();
 

@@ -1,8 +1,14 @@
 ﻿using ImageProcessing.Models;
 using ImageProcessing.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using ImageSharpImage = SixLabors.ImageSharp.Image;
+
 
 namespace ImageProcessing.Controllers
 {
@@ -12,58 +18,83 @@ namespace ImageProcessing.Controllers
     {
         private readonly IImageProcessingService _processingService;
         private readonly ImageDbContext _dbContext;
+        private readonly ProducerService _producer;
+        private readonly ILogger<ImageController> _logger;
 
-        public ImageController(IImageProcessingService processingService, ImageDbContext dbContext)
+        public ImageController(
+            IImageProcessingService processingService,
+            ImageDbContext dbContext,
+            ProducerService producer,
+            ILogger<ImageController> logger)
         {
             _processingService = processingService;
             _dbContext = dbContext;
+            _producer = producer;
+            _logger = logger;
         }
 
         [HttpPost("upload")]
         [RequestSizeLimit(100_000_000)]
-        public async Task<IActionResult> Upload(IFormFile file)
+        public async Task<IActionResult> UploadImage(IFormFile file)
         {
             if (file == null || file.Length == 0)
-                return BadRequest("No file uploaded");
+                return BadRequest("Invalid file.");
 
-            using var stream = file.OpenReadStream();
-            var variants = new List<ImageVariant>();
-
-            var variantTypes = await _dbContext.VariantTypes.ToListAsync();
-            foreach (var type in variantTypes)
+            try
             {
-                stream.Position = 0;
-                var variant = await _processingService.GenerateVariantAsync(stream, file.FileName, type);
-                variants.Add(variant);
+                var directory = Path.Combine("wwwroot", "uploads");
+                if (!Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+
+                var filePath = Path.Combine(directory, file.FileName);
+                using var stream = new FileStream(filePath, FileMode.Create);
+                await file.CopyToAsync(stream);
+
+                var image = new Models.Image
+                {
+                    FileName = file.FileName,
+                    OriginalPath = filePath,
+                    UploadedAt = DateTime.UtcNow
+                };
+
+                _dbContext.Images.Add(image);
+                await _dbContext.SaveChangesAsync();
+
+                // Trigger image processing
+                await _processingService.ProcessImageAsync(image);
+
+                // Send message to Kafka
+                await _producer.SendMessageAsync(image.Id.ToString(), image);
+
+                return Ok(new { image.Id, filePath });
             }
-
-            return Ok(variants.Select(v => new
+            catch (Exception ex)
             {
-                v.Id,
-                VariantType = v.VariantType.Name,
-                v.Width,
-                v.Height,
-                v.FilePath,
-                v.Format,
-                v.FileSize
-            }));
+                _logger.LogError($"Error during image upload: {ex.Message}");
+                return StatusCode(500, "Internal server error.");
+            }
         }
 
-        [HttpGet("variant/{originalFileName}/{typeName}")]
-        public async Task<IActionResult> GetVariant(string originalFileName, string typeName)
+        [HttpGet("{imageName}/{variantName}")]
+        public async Task<IActionResult> GetImageVariant(string imageName, string variantName)
         {
-            var type = await _dbContext.VariantTypes.FirstOrDefaultAsync(t => t.Name == typeName);
-            if (type == null)
-                return NotFound("Variant type not found.");
+            try
+            {
+                var variantPath = await _processingService.GetVariantPathAsync(imageName, variantName);
 
-            var variant = await _dbContext.ImageVariants
-                .FirstOrDefaultAsync(v => v.OriginalFileName == originalFileName && v.VariantTypeId == type.Id);
+                if (variantPath == null)
+                {
+                    _logger.LogWarning($"Variant '{variantName}' not found for Image '{imageName}'.");
+                    return NotFound("Variant not found.");
+                }
 
-            if (variant == null)
-                return NotFound("No variant found for the original file and requested type.");
-
-            var fileStream = System.IO.File.OpenRead(variant.FilePath);
-            return File(fileStream, $"image/{variant.Format.TrimStart('.')}");
+                return PhysicalFile(variantPath, "image/webp");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error retrieving variant '{variantName}' for image '{imageName}': {ex.Message}");
+                return StatusCode(500, "Internal server error.");
+            }
         }
     }
 }
